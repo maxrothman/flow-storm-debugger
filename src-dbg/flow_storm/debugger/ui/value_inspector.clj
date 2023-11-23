@@ -4,6 +4,7 @@
              :refer [event-handler button label h-box v-box border-pane]]
             [clojure.string :as str]
             [flow-storm.utils :as utils :refer [log-error]]
+            [flow-storm.runtime.values :as rt-values] ;; THIS IS JUST FOR TESTING, CAN'T BE HERE
             [flow-storm.debugger.runtime-api :as runtime-api :refer [rt-api]]
             [flow-storm.types :as types]
             [flow-storm.debugger.state :as dbg-state]
@@ -12,7 +13,12 @@
            [javafx.stage Stage]
            [javafx.scene.layout VBox HBox Priority]
            [javafx.geometry Orientation]
-           [javafx.scene.control SplitPane]))
+           [javafx.scene.control TextInputDialog SplitPane]
+           [javafx.scene.web WebView]
+
+           [javafx.beans.value ChangeListener]
+           [javafx.concurrent Worker$State]))
+
 
 (declare create-value-pane)
 
@@ -168,9 +174,68 @@
 
     mp))
 
+(defn portal-open [{:keys [options] :as args}]
+  (let [make-atom (requiring-resolve 'portal.runtime.jvm.client/make-atom)
+        rt-sessions @(requiring-resolve 'portal.runtime/sessions)
+        portal     (make-atom (random-uuid))
+        session-id (:session-id portal)]
+    (swap! rt-sessions update-in [session-id :options] merge options)
+    portal))
+
+(defonce portal-session nil)
+
+(defn create-portal-pane [val _]
+  (let [wv (WebView.)
+        _ (println "CREATED WEBVIEW")
+        wv-eng (.getEngine wv)
+        _ (println "CREATED WEBENGINE")
+        p-clear (requiring-resolve 'portal.api/clear)
+        p-submit (requiring-resolve 'portal.api/submit)
+        session-id (.toString portal-session)]
+
+    #_(-> wv-eng .getLoadWorker .stateProperty
+        (.addListener
+         (proxy [ChangeListener] []
+           (changed [_ prev-val new-val]
+             (when (= new-val Worker$State/SUCCEEDED)
+               (let [window (.executeScript wv-eng "window")
+                     connector (.setMember window
+                                           "javaConnector"
+                                           (reify ErrP
+                                             (handleError [_ msg] (println "@@@ ERR" msg))))]))))))
+    #_(println "setup javaConnector ")
+    #_(.executeScript wv-eng
+                    (str
+                     "window.onerror = function(message, source, lineno, colno, error) {"
+                     "    javaConnector.handleError(message, source, lineno, colno, error);"
+                     "    return true;"
+                     "};"))
+    #_(println "setup error handler ")
+
+    (.load wv-eng (format "http://localhost:7723?%s" session-id))
+
+    (println "LOADED")
+    (p-clear)
+    (println "Cleared")
+    (p-submit val)
+    (println "Submitted")
+    wv))
+#_((requiring-resolve 'portal.api/clear))
+#_((requiring-resolve 'portal.api/submit) {:a 1 :b 10})
+#_(#'portal.runtime/var->name #'pr-str)
+(defn setup-portal []
+  (let [jvm-server-start (requiring-resolve 'portal.runtime.jvm.launcher/start)
+        register!        (requiring-resolve 'portal.runtime/register!)
+        _ (register! {:name})
+        _ (jvm-server-start {:port 7723})
+        p-session (portal-open {})]
+    (alter-var-root #'portal-session (constantly p-session))))
+
+(var- #'setup-portal)
 (defn create-inspector [vref opts]
   (try
-    (let [scene (Scene. (create-inspector-pane vref opts) 1000 600)
+    (let [_ (println "@@@@ vref" vref)
+          scene (Scene. (create-inspector-pane vref opts) 1000 600)
           stage (doto (Stage.)
                   (.setTitle "FlowStorm value inspector")
                   (.setScene scene))]
@@ -181,3 +246,27 @@
 
     (catch Exception e
       (log-error "UI Thread exception" e))))
+
+(comment
+  (setup-portal)
+  (ui-utils/run-later
+    (let [vref 15
+          val (rt-values/deref-value vref)
+          scene (Scene. (create-portal-pane val {}) 1000 600)
+          stage (doto (Stage.)
+                  (.setTitle "FlowStorm value inspector")
+                  (.setScene scene))]
+
+      (dbg-state/register-and-init-stage! stage)
+
+      (-> stage .show)))
+
+  (require '[portal.api :as p])
+  (def p (p/open))
+  (p/submit {:hello [{:world [1 2 3]}]})
+  (p/submit @flow-storm.debugger.state/state)
+  (p/submit {:a (range)})
+  (p/sessions) ({:session-id #uuid "8ff1776b-1cc9-4d24-bb09-5cb2af01d3d5"})
+
+  (p/clear)
+  )

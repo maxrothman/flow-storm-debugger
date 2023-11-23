@@ -209,3 +209,22 @@
   (step-prev)
 
   )
+
+(comment
+
+ (require '[portal.api :as p])
+ (require '[portal.runtime :as rt])
+ (first (p/sessions))
+
+ (def p1 (p/open))
+ (def p2 (p/open))
+
+ (p/clear (first (p/sessions)))
+ (do
+   (p/clear)
+   (p/submit [1 2 53]))
+
+ rt/sessions
+ (binding [rt/*session* (rt/get-session (first (rt/active-sessions)))]
+   (rt/clear-values))
+ (rt/update-value [1 2 53]))

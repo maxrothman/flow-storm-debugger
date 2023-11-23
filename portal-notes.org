@@ -1,0 +1,20 @@
+* Initialization
+- portal.runtime.jvm.launcher/start starts the server
+  - options can specify port
+  - portal.runtime.jvm.server/handler handles the requests
+- portal.runtime.browser/open creates the SESSION-ID 
+- portal.runtime.browser/-open opens chrome with ["--app=http://localhost:38227?SESSION-ID"]
+- First call the browser makes it calls [:get "/rpc"] which creates session state under SESSION-ID via portal.runtime/open-session creates
+  - creates a WS channel that process messages
+    - message processing is done via
+      
+* Commands handling
+- portal.runtime.jvm.server/route is a multimethod on ex: [:get "/rpc"]
+- src/portal/runtime.cljc contains :
+    - #'pr-str 
+    - #'deref 
+    - #'meta 
+    - #'update-selected
+    - #'clear-values 
+    - #'nav 
+    - #'toggle-watch 
