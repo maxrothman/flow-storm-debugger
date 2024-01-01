@@ -137,6 +137,13 @@
   (when flow-thread-registry
     (index-protos/get-thread-indexes flow-thread-registry flow-id thread-id)))
 
+(defn get-timeline [thread-id]
+  (some (fn [[fid tid]]
+          (when (= thread-id tid)
+            (-> (get-thread-indexes fid tid)
+                :timeline-index)))
+        (index-protos/all-threads flow-thread-registry)))
+
 (defn get-or-create-thread-indexes [flow-id thread-id thread-name form-id]
   ;; create the `nil` (funnel) flow if it doesn't exist
    (when (and (nil? flow-id) (not (flow-exists? nil)))
@@ -246,7 +253,7 @@
 
 (defn timeline-count [flow-id thread-id]
   (when-let [timeline-index (:timeline-index (get-thread-indexes flow-id thread-id))]
-    (index-protos/timeline-count timeline-index)))
+    (count timeline-index)))
 
 (defn timeline-entry [flow-id thread-id idx drift]
   (let [{:keys [timeline-index]} (get-thread-indexes flow-id thread-id)]
@@ -457,7 +464,7 @@
                        (let [scoord (str/join "," coord-vec)]
                          #?(:cljs scoord
                             :clj (.intern scoord)))))))
-        tl-entries (index-protos/timeline-raw-entries timeline-index 0 (dec (index-protos/timeline-count timeline-index)))
+        tl-entries (index-protos/timeline-raw-entries timeline-index 0 (dec (count timeline-index)))
         maybe-print-entry (fn [prints-so-far curr-fn-call tl-entry]
                             (let [form-id (fn-call-trace/get-form-id curr-fn-call)]
                               (if (contains? printers form-id)

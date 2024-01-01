@@ -5,7 +5,9 @@
             [flow-storm.runtime.types.fn-call-trace :as fn-call-trace]
             [flow-storm.runtime.types.fn-return-trace :as fn-return-trace]
             [flow-storm.runtime.types.expr-trace :as expr-trace]
-            [flow-storm.runtime.types.bind-trace :as bind-trace]))
+            [flow-storm.runtime.types.bind-trace :as bind-trace]
+            [clojure.core.protocols :as cp]))
+
 
 (def fn-expr-limit
   #?(:cljs 9007199254740992 ;; MAX safe integer     
@@ -137,7 +139,7 @@
             (+ 2 idx))
           (+ 1 idx))))))
 
-(defrecord ExecutionTimelineTree [;; an array of FnCall, Expr, FnRet, FnUnwind
+(deftype ExecutionTimelineTree [;; an array of FnCall, Expr, FnRet, FnUnwind
                                   timeline 
 
                                   ;; a stack of pointers to prev FnCall
@@ -198,13 +200,13 @@
         (when (pos? (ms-count stack))
           (ms-pop stack)
           (recur stack)))))
-
-  index-protos/TimelineP
   
+  index-protos/TimelineP
+
   (timeline-count [this]
     (locking this
       (ml-count timeline)))
-  
+
   (timeline-entry [this idx drift]
     (locking this
       (when (pos? (ml-count timeline))
@@ -296,16 +298,6 @@
                          (conj ch-indexes i))
 
                   (recur (inc i) ch-indexes)))))))))
-
-  #?@(:clj
-      [Object
-       (toString [_]                 
-                 (.toString
-                  (reduce (fn [^StringBuilder sb tl-entry]
-                            (.append sb (str tl-entry))
-                            (.append sb "\n"))
-                          (StringBuilder.)
-                          timeline)))])
   
   (tree-frame-data [this fn-call-idx {:keys [include-path? include-exprs? include-binds?]}]
     (if (= fn-call-idx tree-root-idx)
@@ -340,7 +332,57 @@
                 fr-data (if include-binds?
                           (assoc fr-data :bindings (map index-protos/as-immutable (fn-call-trace/bindings fn-call)))
                           fr-data)]
-            fr-data))))))
+            fr-data)))))
+
+  #?@(:clj
+      [Object
+       (toString [_]                 
+                 (.toString
+                  (reduce (fn [^StringBuilder sb tl-entry]
+                            (.append sb (str tl-entry))
+                            (.append sb "\n"))
+                          (StringBuilder.)
+                          timeline)))
+       
+       clojure.lang.Counted       
+       (count
+        [this]
+        (locking this
+          (ml-count timeline)))
+
+       clojure.lang.Seqable
+       (seq
+        [this]
+        (locking this
+          (doall (seq timeline))))       
+
+       cp/CollReduce
+       (coll-reduce
+        [this f]        
+        (locking this
+          (cp/coll-reduce timeline f)))
+       
+       (coll-reduce
+        [this f v]        
+        (locking this
+          (cp/coll-reduce timeline f v)))
+
+       clojure.lang.ILookup
+       (valAt [this k] (locking this (ml-get timeline k)))
+       (valAt [this k not-found] (locking this (or (ml-get timeline k) not-found)))
+
+       clojure.lang.Indexed
+       (nth [this k] (locking this (ml-get timeline k)))
+       (nth [this k not-found] (locking this (or (ml-get timeline k) not-found)))]))
+
+#?
+(:cljs
+   (extend-type ExecutionTimelineTree
+     cljs.core.ICounted
+     
+     (-count [this]
+       (locking this
+         (ml-count (:timeline this))))))
 
 (defn make-index []
   (let [build-stack (make-mutable-stack)
