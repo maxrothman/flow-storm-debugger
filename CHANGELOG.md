@@ -48,6 +48,7 @@
     - Centralize bookmarks system (one bookmark system for all flows and threads)
     - Step over doesn't stop at function boundaries anymore
     - Improved value inspector performance on remote runtimes (via :val-preview)
+    - Improved value inspector meta with a split pane
 
 ### Bugs fixed
 

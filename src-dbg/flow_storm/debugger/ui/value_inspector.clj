@@ -52,9 +52,13 @@
                                                  mp]))
                               val-pane (border-pane {:top val-header-box
                                                      :center (:val-pane head)})
-                              val-full-pane (v-box (if meta-box
-                                                     [meta-box val-pane]
-                                                     [val-pane]))]
+                              val-full-pane (if meta-box
+                                              (let [meta-val-split (doto (SplitPane.)
+                                                                     (.setOrientation (Orientation/VERTICAL))
+                                                                     (.setDividerPosition 0 0.3))]
+                                                (.addAll (.getItems meta-val-split) [meta-box val-pane])
+                                                meta-val-split)
+                                              val-pane)]
                           (VBox/setVgrow val-pane Priority/ALWAYS)
                           val-full-pane)]
     (HBox/setHgrow value-full-pane Priority/ALWAYS)
