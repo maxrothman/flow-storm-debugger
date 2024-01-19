@@ -2,7 +2,8 @@
   (:require [clojure.pprint :as pp]
             [clojure.datafy :as datafy]
             [flow-storm.utils :as utils]
-            [flow-storm.types :as types]))
+            [flow-storm.types :as types]
+            [clojure.core.protocols :refer [nav]]))
 
 (defprotocol PWrapped
   (unwrap [_]))
@@ -190,23 +191,36 @@
 
     (reference-value! x)))
 
-(defn- build-shallow-map [data]
-  (let [entries (->> (into {} data)
+(defn navigate [datafied-coll k v]
+  (try
+    (nav datafied-coll k v)
+    #?(:clj (catch Throwable _ v)
+       :cljs (catch js/Error _ v))))
+
+(defn- build-shallow-map [datafied-map]
+  (let [entries (->> datafied-map
                      (mapv (fn [[k v]]
-                             [(maybe-ref! k) (maybe-ref! v)])))]
+                             (let [nv (navigate datafied-map k v)]                               
+                               (cond-> {:key-ref (maybe-ref! k)
+                                        :val-ref (maybe-ref! v)}
+                                 
+                                 (not (identical? nv v)) (assoc :nav-ref (maybe-ref! nv)))))))]
     {:val/kind :map
      :val/map-entries entries}))
 
-(defn- build-shallow-seq [data]  
-  (let [{:keys [page/offset] :or {offset 0}} (meta data)
+(defn- build-shallow-seq [datafied-seq]  
+  (let [{:keys [page/offset] :or {offset 0}} (meta datafied-seq)
         page-size 50
-        cnt (when (counted? data) (count data))
-        shallow-page (->> data
-                          (map #(maybe-ref! %))
+        cnt (when (counted? datafied-seq) (count datafied-seq))
+        shallow-page (->> datafied-seq
                           (take page-size)
+                          (map-indexed (fn [i v]
+                                         (let [nv (navigate datafied-seq i v)]                               
+                                           (cond-> {:val-ref (maybe-ref! v)}                                      
+                                             (not (identical? nv v)) (assoc :nav-ref (maybe-ref! nv))))))
                           doall)
         shallow-page-cnt (count shallow-page)
-        more-elems (drop shallow-page-cnt data)]
+        more-elems (drop shallow-page-cnt datafied-seq)]
     (cond-> {:val/kind :seq
              :val/page shallow-page
              :page/offset offset
@@ -219,7 +233,7 @@
   (let [v (deref-value vref)
         v-meta (meta v)
         data (cond-> (datafy/datafy v) ;; forward meta since we are storing meta like :page/offset in references
-               v-meta (with-meta v-meta))
+               v-meta (utils/merge-meta v-meta))
         type-name (value-type v)
         shallow-data (cond
                        (utils/map-like? data)

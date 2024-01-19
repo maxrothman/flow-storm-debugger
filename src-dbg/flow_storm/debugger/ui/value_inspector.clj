@@ -125,9 +125,19 @@
         renderer-val (case (:val/kind shallow-val)
                        :object (:val/str shallow-val)
                        :map (->> (:val/map-entries shallow-val)
-                                 (map (fn [[k v]]
-                                        [(make-item "<key>" k) (make-item k v)])))
-                       :seq (map-indexed (fn [i v] (make-item i v)) (:val/page shallow-val)))]
+                                 (mapv (fn [{:keys [key-ref val-ref nav-ref]}]
+                                         (let [k-item (make-item "<key>" key-ref)
+                                               v-item (make-item key-ref val-ref)]
+                                           [k-item
+                                            (assoc v-item
+                                                   :nav-ref nav-ref
+                                                   :nav-key (:val-txt k-item))]))))
+                       :seq (->> (:val/page shallow-val)
+                                 (map-indexed (fn [i {:keys [val-ref nav-ref]}]
+                                                (assoc (make-item i val-ref)
+                                                       :nav-ref nav-ref
+                                                       :nav-key (str i))))
+                                 doall))]
 
     (case (:val/kind shallow-val)
       :object (h-box [(label (:val/str shallow-val))])

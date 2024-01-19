@@ -2,7 +2,7 @@
   (:require [clojure.string :as str]
             [flow-storm.debugger.ui.utils
              :as ui-utils
-             :refer [event-handler button label v-box table-view]])
+             :refer [event-handler button label v-box h-box table-view icon-button]])
   (:import [javafx.scene.layout HBox VBox Priority]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -38,15 +38,15 @@
 (defn load-morse-renderers []
   nil)
 
-(defn create-browsable-node [{:keys [val-txt] :as item} on-selected]
-  (let [node-in-prev-pane? (fn [node]
-                             (loop [n node]
-                               (when n
-                                 (if (= "prev-pane" (.getId n))
-                                   true
-                                   (recur (.getParent n))))))
+(defn- node-in-prev-pane? [node]
+  (loop [n node]
+    (when n
+      (if (= "prev-pane" (.getId n))
+        true
+        (recur (.getParent n))))))
 
-        click-handler (event-handler
+(defn create-browsable-node [{:keys [val-txt] :as item} on-selected]
+  (let [click-handler (event-handler
                        [mev]
                        (on-selected item (node-in-prev-pane? (.getSource mev))))
         lbl (doto (label val-txt "link-lbl")
@@ -54,12 +54,24 @@
     {:node-obj lbl
      :click-handler click-handler}))
 
-(defn make-node [{:keys [browsable-val? val-txt] :as item} on-selected]
-  (if browsable-val?
-    (create-browsable-node item on-selected)
-    {:node-obj (label val-txt)}))
+(defn make-node [{:keys [browsable-val? val-txt nav-ref nav-key stack-txt] :as item} on-selected]
+  (let [{:keys [node-obj click-handler]} (if browsable-val?
+                                           (create-browsable-node item on-selected)
+                                           {:node-obj (label val-txt)})]
+    {:node-obj (if nav-ref
+                 (let [nav-btn (icon-button :icon-name "mdi-arrow-right"
+                                            :tooltip "Navigate using datafy/nav")]
+                   (.setOnAction nav-btn
+                                 (event-handler [mev]
+                                   (on-selected {:stack-txt (format "-{%s %s}->" nav-key stack-txt)
+                                                 :val-ref nav-ref}
+                                                (node-in-prev-pane? (.getSource mev)))))
+                   (doto (h-box [node-obj nav-btn])
+                     (.setSpacing 5)))
+                 node-obj)
+     :click-handler click-handler}))
 
-(defn create-map-browser-pane [amap on-selected]
+(defn create-map-browser-pane [map-entries on-selected]
   (let [{:keys [table-view-pane table-view]}
         (table-view {:columns ["Key" "Value"]
                      :cell-factory-fn (fn [_ item]
@@ -68,7 +80,7 @@
                                          (boolean
                                           (or (str/includes? (:val-txt k-item) search-str)
                                               (str/includes? (:val-txt v-item) search-str))))
-                     :items amap})]
+                     :items map-entries})]
     (VBox/setVgrow table-view Priority/ALWAYS)
     (VBox/setVgrow table-view-pane Priority/ALWAYS)
     (HBox/setHgrow table-view-pane Priority/ALWAYS)

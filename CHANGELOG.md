@@ -36,7 +36,8 @@
     - Add a thread timeline index column to the multi-thread timeline
     - New same-coord and custom-same-coord power steppers
     - New context menu to find recordings from unhighlighted text ("Jump forward here", etc)
-    
+    - Add support for datafy/nav
+
 ### Changes
 
     - Make tooltips have a 400ms delay instead of default 1000ms
