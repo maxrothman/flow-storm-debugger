@@ -183,14 +183,6 @@
     {:val-str val-str
      :val-type val-type}))
 
-(defn- maybe-ref! [x]
-  (if (or (boolean? x)
-          (nil? x))
-    
-    x
-
-    (reference-value! x)))
-
 (defn navigate [datafied-coll k v]
   (try
     (nav datafied-coll k v)
@@ -201,12 +193,11 @@
   (let [entries (->> datafied-map
                      (mapv (fn [[k v]]
                              (let [nv (navigate datafied-map k v)]                               
-                               (cond-> {:key-ref (maybe-ref! k)
-                                        :val-ref (maybe-ref! v)}
+                               (cond-> {:key-ref (reference-value! k)
+                                        :val-ref (reference-value! v)}
                                  
-                                 (not (identical? nv v)) (assoc :nav-ref (maybe-ref! nv)))))))]
-    {:val/kind :map
-     :val/map-entries entries}))
+                                 (not (identical? nv v)) (assoc :nav-ref (reference-value! nv)))))))]
+    {:map/entries entries}))
 
 (defn- build-shallow-seq [datafied-seq]  
   (let [{:keys [page/offset] :or {offset 0}} (meta datafied-seq)
@@ -216,18 +207,17 @@
                           (take page-size)
                           (map-indexed (fn [i v]
                                          (let [nv (navigate datafied-seq i v)]                               
-                                           (cond-> {:val-ref (maybe-ref! v)}                                      
-                                             (not (identical? nv v)) (assoc :nav-ref (maybe-ref! nv))))))
+                                           (cond-> {:val-ref (reference-value! v)}                                      
+                                             (not (identical? nv v)) (assoc :nav-ref (reference-value! nv))))))
                           doall)
         shallow-page-cnt (count shallow-page)
         more-elems (drop shallow-page-cnt datafied-seq)]
-    (cond-> {:val/kind :seq
-             :val/page shallow-page
-             :page/offset offset
-             :total-count cnt}
+    (cond-> {:seq/page shallow-page
+             :seq/offset offset
+             :seq/total-count cnt}
       (seq more-elems) (assoc :val/more (reference-value! (with-meta more-elems {:page/offset (+ offset shallow-page-cnt)}))))))
 
-(defn shallow-val
+(defn shallow-datafy
   
   [vref]  
   (let [v (deref-value vref)
@@ -237,17 +227,23 @@
         type-name (value-type v)
         shallow-data (cond
                        (utils/map-like? data)
-                       (build-shallow-map data)
+                       (merge {:kind :map}
+                        (build-shallow-map data))
 
                        (or (coll? data) (utils/seq-like? data))
-                       (build-shallow-seq data)
+                       (merge {:kind :seq}
+                              (build-shallow-seq data))
 
+                       (number?  data) {:val/kind :number  :val data}
+                       (string?  data) {:val/kind :string  :val data}
+                       (boolean? data) {:val/kind :boolean :val data}
+                       
                        :else {:val/kind :object
                               :val/str (pr-str v)})
         shallow-data (assoc shallow-data
                             :val/type type-name                            
                             :val/shallow-meta (when-let [m (meta v)]
-                                                (shallow-val m)))]    
+                                                (shallow-datafy m)))]    
     shallow-data))
 
 (defn tap-value [vref]

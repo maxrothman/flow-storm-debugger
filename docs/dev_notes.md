@@ -161,7 +161,7 @@ Whatever is using `flow-storm.runtime.debuggers-api` will deal with this `ValueR
 
 Two functions are also exposed by `flow-storm.runtime.debuggers-api` to work with `ValueRef`s : 
   * `val-pprint` for printing a value into a string representation with provided `print-level` and `print-length`
-  * `shallow-val` for returning the "first level" of the value and more `ValueRef`s to keep exploring it
+  * `shallow-datafy` for returning the "first level" of the value datafy and more `ValueRef`s to keep exploring it
   
 The values registry implementation is a little more involved than just a map from (hash value) -> value because not all
 values can be hashed, specially infinite sequences. For that, every value is wrapped in a

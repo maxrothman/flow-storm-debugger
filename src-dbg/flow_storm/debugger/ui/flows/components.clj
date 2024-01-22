@@ -1,6 +1,6 @@
 (ns flow-storm.debugger.ui.flows.components
   (:require [flow-storm.debugger.ui.utils :as ui-utils :refer [event-handler label h-box v-box button text-area check-box]]
-            [flow-storm.debugger.ui.value-inspector :as value-inspector]
+            [flow-storm.debugger.ui.value-inspector.inspector :as value-inspector]
             [flow-storm.debugger.state :refer [store-obj obj-lookup]]
             [flow-storm.debugger.runtime-api :as runtime-api :refer [rt-api]])
   (:import [javafx.scene.control CheckBox TextField]

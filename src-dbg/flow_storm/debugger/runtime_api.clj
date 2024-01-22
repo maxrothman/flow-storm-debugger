@@ -19,6 +19,7 @@
             [flow-storm.debugger.websocket :as websocket]
             [flow-storm.debugger.state :as dbg-state]
             [flow-storm.debugger.ui.flows.general :refer [show-message]]
+            [flow-storm.runtime.values :as rt-values]
             [clojure.string :as str])
   (:import [java.io Closeable]))
 
@@ -46,8 +47,11 @@
 
 (defprotocol RuntimeApiP
   (runtime-config [_])
+
   (val-pprint [_ v opts])
-  (shallow-val [_ v])
+  (datafy [_ vref])
+  (value-entry-at [_ vref k-vref])
+
   (get-form [_ form-id])
   (timeline-count [_ flow-id thread-id])
   (timeline-entry [_ flow-id thread-id idx drift])
@@ -94,6 +98,10 @@
   (set-total-order-recording [_ x])
   (all-fn-call-stats [_])
   (find-fn-call [_ fq-fn-call-symb from-idx opts]))
+
+(defprotocol RemoteValueP
+  (remote-entry-at [_ k])
+  (remote-pr-str [_]))
 
 (defn cached-apply [cache cache-key f args]
   (let [res (get @cache cache-key :flow-storm/cache-miss)]
@@ -145,8 +153,10 @@
   RuntimeApiP
 
   (runtime-config [_] (api-call :local "runtime-config" []))
+
   (val-pprint [_ v opts] (api-call :local "val-pprint" [v opts] {:cache api-cache :timeout api-call-timeout})) ;; CACHED
-  (shallow-val [_ v] (api-call :local "shallow-val" [v] {:cache api-cache}))  ;; CACHED
+  (datafy [_ vref] #_(datafy (rt-values/deref-value vref)))
+
   (get-form [_ form-id] (api-call :local "get-form" [form-id] {:cache api-cache}))  ;; CACHED
   (timeline-count [_ flow-id thread-id] (api-call :local "timeline-count" [flow-id thread-id]))
   (timeline-entry [_ flow-id thread-id idx drift] (api-call :local "timeline-entry" [flow-id thread-id idx drift]))
@@ -269,7 +279,7 @@
 
   (runtime-config [_] (api-call :remote "runtime-config" []))
   (val-pprint [_ v opts] (api-call :remote "val-pprint" [v opts] {:cache api-cache :timeout api-call-timeout})) ;; CACHED
-  (shallow-val [_ v] (api-call :remote "shallow-val" [v] {:cache api-cache}))  ;; CACHED
+  (datafy [_ vref] (api-call :remote "shallow-datafy" [vref] {:cache api-cache}))  ;; CACHED
   (get-form [_ form-id] (api-call :remote "get-form" [form-id] {:cache api-cache}))  ;; CACHED
   (timeline-count [_ flow-id thread-id] (api-call :remote "timeline-count" [flow-id thread-id]))
   (timeline-entry [_ flow-id thread-id idx drift] (api-call :remote "timeline-entry" [flow-id thread-id idx drift]))

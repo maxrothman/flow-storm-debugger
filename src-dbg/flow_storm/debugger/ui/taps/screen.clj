@@ -5,7 +5,7 @@
             [flow-storm.debugger.state :refer [store-obj obj-lookup]]
             [flow-storm.debugger.ui.flows.screen :as flows-screen]
             [flow-storm.debugger.runtime-api :as runtime-api :refer [rt-api]]
-            [flow-storm.debugger.ui.value-inspector :as value-inspector]
+            [flow-storm.debugger.ui.value-inspector.inspector :as value-inspector]
             [flow-storm.debugger.ui.flows.general :as ui-general])
   (:import [javafx.scene.layout Priority VBox]
            [javafx.scene.input MouseButton]

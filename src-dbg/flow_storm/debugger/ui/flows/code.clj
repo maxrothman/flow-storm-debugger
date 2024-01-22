@@ -3,7 +3,7 @@
             [flow-storm.form-pprinter :as form-pprinter]
             [flow-storm.debugger.ui.flows.components :as flow-cmp]
             [flow-storm.debugger.ui.utils :as ui-utils :refer [event-handler v-box h-box label icon list-view text-field tab-pane tab combo-box border-pane]]
-            [flow-storm.debugger.ui.value-inspector :as value-inspector]
+            [flow-storm.debugger.ui.value-inspector.inspector :as value-inspector]
             [flow-storm.utils :as utils]
             [flow-storm.debugger.ui.flows.bookmarks :as bookmarks]
             [flow-storm.debugger.state :as dbg-state :refer [store-obj obj-lookup subscribe-to-task-event]]

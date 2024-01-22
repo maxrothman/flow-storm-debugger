@@ -231,3 +231,98 @@
 
 (type (:fn-args (index-protos/timeline-entry  (:timeline-index (index-api/get-thread-indexes nil 18)) 0 :at)))
   )
+
+(require '[clojure.datafy :refer [datafy nav]])
+
+(defn generate-db
+  "Generate a random database of users and departments.
+   It is ENTIRELY possible for this database to contain
+   circular links, but that is not a problem with the lazy
+   nature of datafy/nav."
+  []
+  (let [user-ids (take 5 (shuffle (range 100)))
+        department-ids (take 3 (shuffle (range 100)))
+        new-user (fn [id]
+                   (let [department-id (rand-nth department-ids)
+                         manager-id (rand-nth user-ids)]
+                     {:id id
+                      :name (str "User " id)
+                      :department-id department-id
+                      :manager-id manager-id}))
+        new-department (fn [id]
+                         (let [deptartment-head-id (rand-nth user-ids)]
+                           {:id id
+                            :name (str "Department " id)
+                            :department-head-user-id deptartment-head-id}))]
+    {:users (zipmap user-ids (map new-user user-ids))
+     :departments (zipmap department-ids (map new-department department-ids))}))
+
+(comment
+  ;sample generated db
+  {:users
+   {65 {:id 65, :name "User 65", :department-id 96, :manager-id 58},
+    58 {:id 58, :name "User 58", :department-id 85, :manager-id 58}},
+   :departments
+   {96 {:id 96, :name "Department 96", :department-head-user-id 65},
+    85 {:id 85, :name "Department 85", :department-head-user-id 65}}})
+
+
+(defn lookup-user
+  "Convenience function to get user by id"
+  [db id]
+  (get-in db [:users id]))
+
+(defn lookup-department
+  "Convenience function to get department by id"
+  [db id]
+  (get-in db [:departments id]))
+
+(declare datafy-ready-user)
+(declare datafy-ready-department)
+
+(defn navize-user
+  [db user]
+  (when user
+    (with-meta
+     user
+     {'clojure.core.protocols/nav (fn [coll k v]
+                                    (case k
+                                      ;; by returning a datafy-ed object,
+                                      ;; the db is propagated to further datafy/nav calls
+                                      :manager-id (datafy-ready-user db (lookup-user db v))
+                                      :department-id (datafy-ready-department db (lookup-department db v))
+                                      v))})))
+
+(defn navize-department
+  [db department]
+  (when department
+    (with-meta
+     department
+     {'clojure.core.protocols/nav (fn [coll k v]
+                                    (case k
+                                      :department-head-user-id (datafy-ready-user db (lookup-user db v))
+                                      v))})))
+
+(defn datafy-ready-user
+  [db user]
+  (when user
+    (with-meta
+     user
+     {'clojure.core.protocols/datafy (fn [x] (navize-user db x))})))
+
+(defn datafy-ready-department
+  [db department]
+  (when department
+    (with-meta
+     department
+     {'clojure.core.protocols/datafy (fn [x] (navize-department db x))})))
+
+;--------------------------------------------------------------
+; The rest of the code creates the db and navs around the graph
+;--------------------------------------------------------------
+(comment
+  (def db (generate-db))
+  (def user1 (lookup-user db (-> db :users keys first)))
+  (tap> (datafy (datafy-ready-user db user1)))
+
+  )

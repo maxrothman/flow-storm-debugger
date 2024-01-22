@@ -62,8 +62,8 @@
 (defn val-pprint [vref opts]
   (rt-values/val-pprint vref opts))
 
-(defn shallow-val [vref]
-  (rt-values/shallow-val vref))
+(defn shallow-datafy [vref]
+  (rt-values/shallow-datafy vref))
 
 #?(:clj (def def-value rt-values/def-value))
 
@@ -431,7 +431,7 @@
 
 (def api-fn {:runtime-config runtime-config
              :val-pprint val-pprint
-             :shallow-val shallow-val
+             :shallow-datafy shallow-datafy
              :get-form get-form
              :timeline-count timeline-count
              :timeline-entry timeline-entry

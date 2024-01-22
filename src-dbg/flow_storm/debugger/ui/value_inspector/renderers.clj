@@ -1,28 +1,23 @@
-(ns flow-storm.debugger.ui.value-renderers
+(ns flow-storm.debugger.ui.value-inspector.renderers
   (:require [clojure.string :as str]
             [flow-storm.debugger.ui.utils
              :as ui-utils
              :refer [event-handler button label v-box h-box table-view icon-button]])
   (:import [javafx.scene.layout HBox VBox Priority]))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; NOTE :                                                                                              ;;
-;;                                                                                                     ;;
-;; This is not implemented yet. I think a good renderers implementation should be                      ;;
-;; compatible with Morse viewers since both are javafx.                                                ;;
-;; For this to happen something like replicant should be implemented on FlowStorm,                     ;;
-;; which means create types on the client side for maps, vectors, sets, etc that implement             ;;
-;; Clojure protocols and interfaces and which transparently handle remote sub values retrieval.        ;;
-;; Currently I can't just use replicant because it doesn't have ClojureScript support, and the current ;;
-;; remove values implementation is not transparent, the user handling the values needs to know about   ;;
-;; this shallow values format.                                                                         ;;
-;; So we will probably end re-implementing replicant stuff here with ClojureScript support.            ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 (def renderers-registry (atom {}))
 
-(defn register-renderer [id-key browser? pred render-fn]
-  (swap! renderers-registry assoc id-key {:browser? browser? :pred pred :render-fn render-fn}))
+(defprotocol RendererVal
+  (preview [v]))
+
+(extend-protocol RendererVal
+  Object
+  (preview [v] (binding [*print-level* 3
+                         *print-length* 3]
+                 (pr-str v))))
+
+(defn register-renderer! [id-key pred render-fn]
+  (swap! renderers-registry assoc id-key {:pred pred :render-fn render-fn}))
 
 (defn renderers-for-val [v]
   (reduce-kv (fn [rr idk {:keys [pred] :as r}]
@@ -35,17 +30,7 @@
 (defn renderer [id-key]
   (get @renderers-registry id-key))
 
-(defn load-morse-renderers []
-  nil)
-
-(defn- node-in-prev-pane? [node]
-  (loop [n node]
-    (when n
-      (if (= "prev-pane" (.getId n))
-        true
-        (recur (.getParent n))))))
-
-(defn create-browsable-node [{:keys [val-txt] :as item} on-selected]
+#_(defn create-browsable-node [{:keys [val-txt] :as item} on-selected]
   (let [click-handler (event-handler
                        [mev]
                        (on-selected item (node-in-prev-pane? (.getSource mev))))
@@ -54,7 +39,7 @@
     {:node-obj lbl
      :click-handler click-handler}))
 
-(defn make-node [{:keys [browsable-val? val-txt nav-ref nav-key stack-txt] :as item} on-selected]
+#_(defn make-node [{:keys [browsable-val? val-txt nav-ref nav-key stack-txt] :as item} on-selected]
   (let [{:keys [node-obj click-handler]} (if browsable-val?
                                            (create-browsable-node item on-selected)
                                            {:node-obj (label val-txt)})]
@@ -71,22 +56,26 @@
                  node-obj)
      :click-handler click-handler}))
 
-(defn create-map-browser-pane [map-entries on-selected]
+(defn print-val [v _]
+  (label (pr-str v)))
+
+(defn map-browser [map-val on-selected]
   (let [{:keys [table-view-pane table-view]}
         (table-view {:columns ["Key" "Value"]
-                     :cell-factory-fn (fn [_ item]
-                                        (:node-obj (make-node item on-selected)))
-                     :search-predicate (fn [[k-item v-item] search-str]
+                     :cell-factory-fn (fn [_ elem]
+                                        (label (preview elem))
+                                        #_(:node-obj (make-node elem on-selected)))
+                     #_:search-predicate #_(fn [[k-item v-item] search-str]
                                          (boolean
                                           (or (str/includes? (:val-txt k-item) search-str)
                                               (str/includes? (:val-txt v-item) search-str))))
-                     :items map-entries})]
+                     :items (seq map-val)})]
     (VBox/setVgrow table-view Priority/ALWAYS)
     (VBox/setVgrow table-view-pane Priority/ALWAYS)
     (HBox/setHgrow table-view-pane Priority/ALWAYS)
     table-view-pane))
 
-(defn create-seq-browser-pane [seq-page load-next-page on-selected]
+#_(defn create-seq-browser-pane [seq-page load-next-page on-selected]
   (let [{:keys [list-view-pane add-all]} (ui-utils/list-view
                                           {:editable? false
                                            :cell-factory-fn (fn [list-cell item]
@@ -120,3 +109,6 @@
     (add-all seq-page)
     (when load-next-page (arm-more-button load-next-page))
     container))
+
+(register-renderer! :map-browser map? map-browser)
+(register-renderer! :print-val   any? print-val)

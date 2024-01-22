@@ -1,4 +1,4 @@
-(ns flow-storm.debugger.ui.value-inspector
+(ns flow-storm.debugger.ui.value-inspector.inspector
   (:require [flow-storm.debugger.ui.utils
              :as ui-utils
              :refer [event-handler button label h-box v-box border-pane]]
@@ -7,8 +7,8 @@
             [flow-storm.debugger.runtime-api :as runtime-api :refer [rt-api]]
             [flow-storm.types :as types]
             [flow-storm.debugger.state :as dbg-state]
-            [flow-storm.debugger.ui.value-renderers :as renderers])
-  (:import [javafx.scene Scene]
+            [flow-storm.debugger.ui.value-inspector.renderers :as renderers])
+  (:import [javafx.scene Scene Node]
            [javafx.stage Stage]
            [javafx.scene.layout VBox HBox Priority]
            [javafx.geometry Orientation]
@@ -23,7 +23,7 @@
     (when-not (str/blank? val-name)
       (runtime-api/def-value rt-api (symbol val-name) val))))
 
-(defn- update-vals-panes [{:keys [main-split vals-stack]}]
+(defn- update-value-pane [{:keys [value-pane vals-stack]}]
   (let [[head prev & _] @vals-stack
         value-full-pane (let [def-btn (button :label "def"
                                               :on-click (:def-fn head))
@@ -41,8 +41,8 @@
                                                          val-prev-btn (conj val-prev-btn)
                                                          val-next-btn (conj val-next-btn)))
                                             (.setSpacing 5))
-                              type-lbl (label (format "Type: %s" (-> head :shallow-val :val/type)))
-                              val-header-box (border-pane {:left (v-box (if-let [cnt (-> head :shallow-val :total-count)]
+                              type-lbl (label (format "Type: %s" (type (:datafied-val head))))
+                              val-header-box (border-pane {} #_{:left (v-box (if-let [cnt (count (:datafied-val head))]
                                                                           [type-lbl (label (format "Count: %d" cnt))]
                                                                           [type-lbl]))
                                                            :right buttons-box}
@@ -51,7 +51,7 @@
                                          (v-box [(label "Meta")
                                                  mp]))
                               val-pane (border-pane {:top val-header-box
-                                                     :center (:val-pane head)})
+                                                     :center (:value-pane head)})
                               val-full-pane (if meta-box
                                               (let [meta-val-split (doto (SplitPane.)
                                                                      (.setOrientation (Orientation/VERTICAL))
@@ -63,12 +63,8 @@
                           val-full-pane)]
     (HBox/setHgrow value-full-pane Priority/ALWAYS)
 
-    (.clear (.getItems main-split))
-    (.addAll (.getItems main-split) (if prev
-                                    (let [prev-pane (doto (h-box [(:val-pane prev)])
-                                                      (.setId "prev-pane"))]
-                                      [prev-pane value-full-pane])
-                                    [value-full-pane]))))
+    (.clear (.getChildren value-pane))
+    (.addAll (.getChildren value-pane) [value-full-pane])))
 
 (defn- drop-stack-to-frame [{:keys [vals-stack]} val-frame]
   (swap! vals-stack
@@ -87,22 +83,22 @@
                       (event-handler
                        [_]
                        (drop-stack-to-frame ctx val-frame)
-                       (update-vals-panes ctx)
+                       (update-value-pane ctx)
                        (update-stack-bar-pane ctx)))))
                  (reverse @vals-stack))))
 
-(defn- make-stack-frame [{:keys [find-and-jump-same-val] :as ctx} stack-txt vref]
-  (let [{:keys [val/shallow-meta] :as shallow-val} (runtime-api/shallow-val rt-api vref)]
-    {:stack-txt stack-txt
-     :val-pane (create-value-pane ctx shallow-val)
-     :meta-pane (when shallow-meta (create-value-pane ctx shallow-meta))
-     :def-fn (fn [] (def-val vref))
-     :tap-fn (fn [] (runtime-api/tap-value rt-api vref))
-     :find-val-fn (when find-and-jump-same-val
-                    (fn [backward?] (find-and-jump-same-val vref {:comp-fn-key :identity} backward?)))
-     :shallow-val shallow-val}))
+(defn- make-stack-frame [{:keys [find-and-jump-same-val] :as ctx} stack-txt datafied-val]
+  {:stack-txt stack-txt
+   :value-pane (create-value-pane ctx datafied-val)
+   :meta-pane (when-let [val-meta (meta datafied-val)]
+                (create-value-pane ctx val-meta))
+   ;; :def-fn (fn [] (def-val vref))
+   ;; :tap-fn (fn [] (runtime-api/tap-value rt-api vref))
+   ;; :find-val-fn (when find-and-jump-same-val
+   ;;                (fn [backward?] (find-and-jump-same-val vref {:comp-fn-key :identity} backward?)))
+   :datafied-val datafied-val})
 
-(defn make-item [stack-key v]
+#_(defn make-item [stack-key v]
   (let [browsable-val? (types/value-ref? v)
         item {:browsable-val? browsable-val?
               :stack-txt (if (types/value-ref? stack-key)
@@ -117,49 +113,26 @@
              :val-ref v
              :val-txt (pr-str v)))))
 
-(defn- create-value-pane [ctx shallow-val]
-  (let [on-selected (fn [{:keys [stack-txt val-ref]} prev-pane?]
-                      (let [new-frame (make-stack-frame ctx stack-txt val-ref)]
-                        (when prev-pane?
-                          (swap! (:vals-stack ctx) pop))
+(defn- create-value-pane [ctx datafied-val]
+  (let [on-selected (fn [val]
+                      (println "@@@ selected " val))
+        renderers (renderers/renderers-for-val datafied-val)
+        val-pane (h-box [])
+        rend-combo (ui-utils/combo-box {:items (keys renderers)
+                                        :cell-factory-fn (fn [cb rend-key]
+                                                           (label (str rend-key)))
+                                        :on-showing-fn (fn [cb] (println "@@@ showing" cb))
+                                        :on-change-fn  (fn [_ rend-key]
+                                                         (println "@@@@ changing " rend-key)
+                                                         (let [{:keys[renderer-fn]} (get renderers rend-key)
+                                                               rend-pane (renderer-fn datafied-val on-selected)]
+                                                           (-> val-pane .getChildren .clear)
+                                                           (-> val-pane
+                                                               .getChildren
+                                                               (.addAll (into-array Node [rend-pane])))))})]
+    val-pane))
 
-                        (swap! (:vals-stack ctx) conj new-frame)
-                        (update-vals-panes ctx)
-                        (update-stack-bar-pane ctx)))
-        renderer-val (case (:val/kind shallow-val)
-                       :object (:val/str shallow-val)
-                       :map (->> (:val/map-entries shallow-val)
-                                 (mapv (fn [{:keys [key-ref val-ref nav-ref]}]
-                                         (let [k-item (make-item "<key>" key-ref)
-                                               v-item (make-item key-ref val-ref)]
-                                           [k-item
-                                            (assoc v-item
-                                                   :nav-ref nav-ref
-                                                   :nav-key (:val-txt k-item))]))))
-                       :seq (->> (:val/page shallow-val)
-                                 (map-indexed (fn [i {:keys [val-ref nav-ref]}]
-                                                (assoc (make-item i val-ref)
-                                                       :nav-ref nav-ref
-                                                       :nav-key (str i))))
-                                 doall))]
-
-    (case (:val/kind shallow-val)
-      :object (h-box [(label (:val/str shallow-val))])
-      :map (renderers/create-map-browser-pane renderer-val on-selected)
-      :seq (let [load-next-page (when (:val/more shallow-val)
-                                  (fn load-next [more-ref]
-                                    (let [{:keys [page/offset val/page val/more]} (runtime-api/shallow-val rt-api more-ref)
-                                          new-page (map-indexed
-                                                    (fn [i v]
-                                                      (make-item (+ offset i) v))
-                                                    page)]
-                                      {:page new-page
-                                       :load-next (partial load-next more)})))]
-             (renderers/create-seq-browser-pane renderer-val
-                                                (when load-next-page (partial load-next-page (:val/more shallow-val)))
-                                                on-selected)))))
-
-(defn- create-inspector-pane [vref {:keys [find-and-jump-same-val]}]
+(defn- create-inspector-pane [datafied-val {:keys [find-and-jump-same-val]}]
   (let [*vals-stack (atom nil)
         stack-bar-pane (doto (h-box [] "value-inspector-stack-pane")
                          (.setSpacing 5))
@@ -167,7 +140,7 @@
                    (.setOrientation (Orientation/HORIZONTAL))
                    (.setDividerPosition 0 0.5))
         ctx {:stack-bar-pane stack-bar-pane
-             :main-split main-split
+             :value-pane value-pane
              :vals-stack *vals-stack
              :find-and-jump-same-val find-and-jump-same-val}
 
@@ -176,15 +149,15 @@
                         "value-inspector-main-pane")]
 
 
-    (swap! *vals-stack conj (make-stack-frame ctx "/" vref))
-    (update-vals-panes ctx)
+    (swap! *vals-stack conj (make-stack-frame ctx "/" datafied-val))
+    (update-value-pane ctx)
     (update-stack-bar-pane ctx)
 
     mp))
 
-(defn create-inspector [vref opts]
+(defn create-inspector [datafied-val opts]
   (try
-    (let [scene (Scene. (create-inspector-pane vref opts) 1000 600)
+    (let [scene (Scene. (create-inspector-pane datafied-val opts) 1000 600)
           stage (doto (Stage.)
                   (.setTitle "FlowStorm value inspector")
                   (.setScene scene))]
@@ -195,3 +168,8 @@
 
     (catch Exception e
       (log-error "UI Thread exception" e))))
+
+(comment
+  (javafx.embed.swing.JFXPanel.)
+  (create-inspector :hello {})
+  )
