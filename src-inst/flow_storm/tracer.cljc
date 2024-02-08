@@ -5,7 +5,6 @@
             [flow-storm.runtime.indexes.api :as indexes-api]
             [flow-storm.runtime.types.fn-call-trace :refer [make-fn-call-trace]]
             [flow-storm.runtime.types.fn-return-trace :refer [make-fn-return-trace make-fn-unwind-trace]]
-            [flow-storm.runtime.types.expr-trace :refer [make-expr-trace]]
             [flow-storm.runtime.types.bind-trace :refer [make-bind-trace]]))
 
 (declare start-tracer)
@@ -198,8 +197,9 @@
      (let [thread-id (utils/get-current-thread-id)]
        (indexes-api/add-expr-exec-trace      
         flow-id
-        thread-id      
-        (make-expr-trace coord (snapshot-reference result))
+        thread-id
+        coord
+        (snapshot-reference result)        
         @total-order-recording)))))
 
 (defn trace-bind

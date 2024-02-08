@@ -47,7 +47,7 @@
           (mh-put stats call (inc cnt)))
         (mh-put stats call 1))))
   
-  (add-expr-exec [_ _]) ; don't do anything for expr-exec
+  (add-expr-exec [_ _ _]) ; don't do anything for expr-exec
   
   (add-bind [_ _]) ; don't do anything for bind
 

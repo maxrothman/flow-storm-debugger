@@ -4,7 +4,7 @@
   (add-form-init [_ trace])
   (add-fn-call [_ trace])
   (add-fn-return [_ trace])
-  (add-expr-exec [_ trace])  
+  (add-expr-exec [_ coord result])  
   (add-bind [_ trace])
   (reset-build-stack [_]))
 
@@ -55,7 +55,7 @@
   (get-thread-indexes [_ flow-id thread-id])
   (flow-exists? [_ flow-id])
   (register-thread-indexes [_ flow-id thread-id thread-name form-id indexes])
-  (record-total-order-entry [_ flow-id thread-id thread-tl-idx entry])
+  (record-total-order-entry [_ flow-id thread-id entry])
   (build-total-order-timeline [_ forms-registry])
   (discard-threads [_ flow-threads-ids])
   (start-thread-registry [_ callbacks])

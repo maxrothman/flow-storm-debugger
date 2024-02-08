@@ -5,11 +5,9 @@
             [flow-storm.runtime.types.fn-call-trace :as fn-call-trace]
             [flow-storm.runtime.types.fn-return-trace :as fn-return-trace]
             [flow-storm.runtime.types.expr-trace :as expr-trace]
-            [flow-storm.runtime.types.bind-trace :as bind-trace]))
-
-(def fn-expr-limit
-  #?(:cljs 9007199254740992 ;; MAX safe integer     
-     :clj 10000))
+            [flow-storm.runtime.types.bind-trace :as bind-trace])
+  #?(:clj (:import [java.lang.ref ReferenceQueue]
+                   [java.util ArrayList])))
 
 (def tree-root-idx -1)
 
@@ -137,11 +135,20 @@
             (+ 2 idx))
           (+ 1 idx))))))
 
+(defprotocol FinalizableP
+  (finalize-obj [_]))
+
 (defrecord ExecutionTimelineTree [;; an array of FnCall, Expr, FnRet, FnUnwind
                                   timeline 
 
                                   ;; a stack of pointers to prev FnCall
-                                  build-stack                                                                                                               
+                                  build-stack
+
+                                  ;; in JVM a java.lang.ref.ReferenceQueue for SoftExprExec
+                                  soft-refs-queue
+
+                                  ;; in JVM a thread for polling soft-refs-queue and nuking SoftExprExec
+                                  soft-refs-poll-thread
                                   ]
 
   index-protos/BuildIndexP
@@ -172,16 +179,18 @@
           (ms-pop build-stack)
           tl-idx))))
   
-  (add-expr-exec [this expr]
+  (add-expr-exec [this coord result]
     (locking this
       ;; discard all expressions when no FnCall has been made yet
       (when (pos? (ms-count build-stack))
-        (let [tl-idx (ml-count timeline)
-              curr-fn-call (ms-peek build-stack)]
-          (expr-trace/set-idx expr tl-idx)
-          (expr-trace/set-fn-call-idx expr (index-protos/entry-idx curr-fn-call))
+        (let [tl-idx (ml-count timeline)              
+              curr-fn-call (ms-peek build-stack)
+              fn-call-idx (index-protos/entry-idx curr-fn-call)
+              expr (if true
+                     (expr-trace/make-soft-expr-trace coord result fn-call-idx tl-idx soft-refs-queue)
+                     (expr-trace/make-expr-trace coord result fn-call-idx tl-idx))]
           (ml-add timeline expr)
-          tl-idx))))
+          expr))))
   
   (add-bind [this bind]
     ;; discard all expressions when no FnCall has been made yet
@@ -340,11 +349,46 @@
                 fr-data (if include-binds?
                           (assoc fr-data :bindings (map index-protos/as-immutable (fn-call-trace/bindings fn-call)))
                           fr-data)]
-            fr-data))))))
+            fr-data)))))
 
-(defn make-index []
+  FinalizableP
+  (finalize-obj [_] #?(:clj (.interrupt soft-refs-poll-thread)))
+  )
+
+(defn make-index [flow-id thread-id]
   (let [build-stack (make-mutable-stack)
-        timeline (make-mutable-list)]    
-    (->ExecutionTimelineTree timeline build-stack)))
+        timeline (make-mutable-list)
+        soft-ref-queue #?(:clj (ReferenceQueue.)
+                          :cljs nil)
+        _ flow-id _ thread-id ;; just for the cljs linter 
+        poll-thread #?(:clj    
+                       (let [poll-th (Thread.
+                                      (fn []      
+                                        (let [cnt (atom 0)]
+                                          (println "@@@@ Starting poll thread for " flow-id thread-id)
+
+                                          (while (not (.isInterrupted (Thread/currentThread)))
+                                            (let [soft-expr-trace (.remove soft-ref-queue)
+                                                  nuke-idx (index-protos/entry-idx soft-expr-trace)]
+
+                                              (locking timeline
+                                                (.set ^ArrayList timeline nuke-idx expr-trace/hole-expr-trace))
+
+                                              ;; TODO remove
+                                              (swap! cnt inc)
+                                              (when (zero? (mod @cnt 100000))
+                                                (println (println "@@@ Nuked " @cnt)))
+                                              ))
+                                          
+                                          (println "@@@@ Poll thread for " flow-id thread-id "stopped."))))]
+                         (.start poll-th)
+                         poll-th)
+                       :cljs nil)]
+    
+    
+    (->ExecutionTimelineTree timeline
+                             build-stack
+                             soft-ref-queue
+                             poll-thread)))
 
 

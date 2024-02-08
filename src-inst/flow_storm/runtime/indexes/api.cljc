@@ -123,7 +123,7 @@
     (index-protos/flow-exists? flow-thread-registry flow-id)))
 
 (defn create-thread-indexes! [flow-id thread-id thread-name form-id]
-  (let [thread-indexes {:timeline-index (timeline-index/make-index)
+  (let [thread-indexes {:timeline-index (timeline-index/make-index flow-id thread-id)
                         :fn-call-stats-index (fn-call-stats-index/make-index)
                         :fn-call-limits (atom @fn-call-limits)
                         :thread-limited (atom nil)}]    
@@ -172,7 +172,7 @@
           (do
             (let [tl-idx (index-protos/add-fn-call timeline-index trace)]
               (when (and tl-idx total-order-recording?)
-                (index-protos/record-total-order-entry flow-thread-registry flow-id thread-id tl-idx trace)))
+                (index-protos/record-total-order-entry flow-thread-registry flow-id thread-id trace)))
             
             (when fn-call-stats-index
               (index-protos/add-fn-call fn-call-stats-index trace)))
@@ -190,7 +190,7 @@
         ;; when not limited, go ahead
         (let [tl-idx (index-protos/add-fn-return timeline-index trace)]
           (when (and tl-idx total-order-recording?)
-            (index-protos/record-total-order-entry flow-thread-registry flow-id thread-id tl-idx trace))
+            (index-protos/record-total-order-entry flow-thread-registry flow-id thread-id trace))
           (when unwind?
             (let [fn-idx (index-protos/fn-call-idx trace)
                   {:keys [fn-ns fn-name]} (index-protos/timeline-entry timeline-index fn-idx :at)
@@ -211,13 +211,13 @@
                                     (dec l))))
           nil)))))
 
-(defn add-expr-exec-trace [flow-id thread-id trace total-order-recording?]
+(defn add-expr-exec-trace [flow-id thread-id coord result total-order-recording?]
   (let [{:keys [timeline-index thread-limited]} (get-thread-indexes flow-id thread-id)]
     
     (when (and timeline-index (not @thread-limited))      
-      (let [tl-idx (index-protos/add-expr-exec timeline-index trace)]
-        (when (and tl-idx total-order-recording?)
-          (index-protos/record-total-order-entry flow-thread-registry flow-id thread-id tl-idx trace))))))
+      (let [entry (index-protos/add-expr-exec timeline-index coord result)]
+        (when (and entry total-order-recording?)
+          (index-protos/record-total-order-entry flow-thread-registry flow-id thread-id entry))))))
 
 (defn add-bind-trace [flow-id thread-id trace]
   (let [{:keys [timeline-index thread-limited]} (get-thread-indexes flow-id thread-id)]

@@ -315,3 +315,5 @@
 
 (defn stringify-coord [coord-vec]
   (str/join "," coord-vec))
+
+

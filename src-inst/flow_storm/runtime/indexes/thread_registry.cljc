@@ -4,6 +4,7 @@
             [flow-storm.runtime.types.fn-call-trace :as fn-call-trace :refer [fn-call-trace?]]
             [flow-storm.runtime.types.fn-return-trace :as fn-return-trace :refer [fn-end-trace? fn-return-trace?]]
             [flow-storm.runtime.types.expr-trace :as expr-trace :refer [expr-trace?]]
+            [flow-storm.runtime.indexes.timeline-index :as timeline-idx]
             [clojure.string :as str]
             [hansel.utils :as hansel-utils])
   #?(:clj (:import [clojure.data.int_map PersistentIntMap])))
@@ -23,11 +24,11 @@
   (tote-thread-tl-idx [_])
   (tote-entry [_]))
 
-(deftype TotalOrderTimelineEntry [flow-id thread-id thread-tl-idx entry]
+(deftype TotalOrderTimelineEntry [flow-id thread-id entry]
   TotalOrderTimelineEntryP
   (tote-flow-id [_] flow-id)
   (tote-thread-id [_] thread-id)
-  (tote-thread-tl-idx [_] thread-tl-idx)
+  (tote-thread-tl-idx [_] (index-protos/entry-idx entry))
   (tote-entry [_] entry))
 
 (defrecord ThreadRegistry [registry
@@ -92,9 +93,11 @@
       (let [flow-int-key (flow-id-key flow-id)]
         (swap! registry assoc-in [flow-int-key thread-id :thread/blocked]  breakpoint))))
 
-  (discard-threads [_ flow-threads-ids]
+  (discard-threads [this flow-threads-ids]
     (doseq [[fid tid] flow-threads-ids]
-      (let [fk (flow-id-key fid)]
+      (let [thread-timeline-idx (:timeline-idx (index-protos/get-thread-indexes this fid tid))
+            fk (flow-id-key fid)]
+        (timeline-idx/finalize-obj thread-timeline-idx)
         (swap! registry update fk dissoc tid)))
     
     ;; remove empty flows from the registry since flow-exist? uses it
@@ -118,14 +121,14 @@
 
   (stop-thread-registry [_])
 
-  (record-total-order-entry [_ flow-id thread-id thread-tl-idx entry]
+  (record-total-order-entry [_ flow-id thread-id entry]
     (locking total-order-timeline
       ;; `build-total-order-timeline` will print expr-vals which because of laziness can fire
       ;; instrumented code that will try to add to the timeline under the same thread, which will end
       ;; in a java.util.ConcurrentModificationException
       ;; The *printing-expr-val* flag is to prevent this
-      (when-not *printing-expr-val*
-        (ml-add total-order-timeline (TotalOrderTimelineEntry. flow-id thread-id thread-tl-idx entry)))))
+      (when-not *printing-expr-val*        
+        (ml-add total-order-timeline (TotalOrderTimelineEntry. flow-id thread-id entry)))))
 
   (build-total-order-timeline [_ forms-registry]
     (locking total-order-timeline
