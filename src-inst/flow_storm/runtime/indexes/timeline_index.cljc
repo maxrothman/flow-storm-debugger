@@ -166,7 +166,36 @@
 
        clojure.lang.Indexed
        (nth [this k] (locking this (ml-get timeline k)))
-       (nth [this k not-found] (locking this (or (ml-get timeline k) not-found)))]))
+       (nth [this k not-found] (locking this (or (ml-get timeline k) not-found)))]
+
+      :cljs
+      [Object
+       (toString [_]                 
+                 (reduce (fn [s tl-entry]
+                           (s (str tl-entry "\n")))
+                         ""
+                         timeline))
+       
+       
+       ICounted
+       (-count [_] (ml-count timeline))
+
+       ISeqable
+       (-seq [_] (seq timeline))
+       
+       IReduce
+       (-reduce [_ f]
+                (reduce f timeline))
+       (-reduce [_ f start]
+                (reduce f start timeline))
+
+       ILookup
+       (-lookup [_ k] (ml-get timeline k))
+       (-lookup [_ k not-found] (or (ml-get timeline k) not-found))
+
+       IIndexed
+       (-nth [coll n] (ml-get timeline n))
+       (-nth [coll n not-found] (or (ml-get timeline n) not-found))]))
 
 (defn make-index []
   (let [build-stack (make-mutable-stack)
