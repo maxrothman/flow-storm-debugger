@@ -77,14 +77,14 @@
       [Object
        (toString [_] (utils/format "[%d FnCallTrace] %s/%s form-id: %d ret: %d" thisIdx fnNs fnName formId retIdx))]))
 
-(defn make-fn-call-trace [fn-ns fn-name form-id fn-args]
+(defn make-fn-call-trace [fn-ns fn-name form-id fn-args this-idx parent-idx]
   (->FnCallTrace fn-name
                  fn-ns
                  form-id
                  fn-args
                  (index-utils/make-mutable-list)
-                 nil-idx
-                 nil-idx
+                 this-idx
+                 (or parent-idx nil-idx)
                  nil-idx))
 
 (defn fn-call-trace? [x]

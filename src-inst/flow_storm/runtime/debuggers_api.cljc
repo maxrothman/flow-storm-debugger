@@ -75,7 +75,9 @@
       (update form :multimethod/dispatch-val reference-value!)
       form)))
 
-(def timeline-count index-api/timeline-count)
+(defn timeline-count [flow-id thread-id]
+  (let [timeline (index-api/get-timeline flow-id thread-id)]
+    (count timeline)))
 
 (defn- reference-frame-data! [{:keys [dispatch-val return/kind] :as frame-data}]
   (cond-> frame-data
@@ -136,8 +138,8 @@
           {}
           (index-api/all-threads)))
 
-(defn find-fn-frames [flow-id thread-id fn-ns fn-name form-id]
-  (let [fn-frames (index-api/find-fn-frames flow-id thread-id fn-ns fn-name form-id)
+(defn find-fn-frames [flow-id thread-id fn-ns fn-name form-id]  
+  (let [fn-frames (index-api/find-fn-frames flow-id thread-id fn-ns fn-name form-id)        
         frames (into [] (map reference-frame-data!) fn-frames)]
     frames))
 
@@ -170,33 +172,32 @@
                      (try
                        (let [{:keys [timeline-index]} (index-api/get-thread-indexes flow-id thread-id)                             
                              found-entry (locking timeline-index
-                                           (let [tl-entries (index-protos/timeline-raw-entries timeline-index from-idx nil)
-                                                 total-entries (count tl-entries)]
-                                             (loop [i 0
-                                                    [tl-entry & tl-rest] tl-entries]
-                                               (when (and tl-entry
-                                                          (not (.isInterrupted (Thread/currentThread))))                        
+                                           (let [total-entries (count timeline-index)]
+                                             (loop [idx from-idx]
+                                               (when (and (< idx total-entries)
+                                                          (not (.isInterrupted (Thread/currentThread))))
+                                                 (let [tl-entry (get timeline-index idx)]
 
-                                                 (when (and on-progress (zero? (mod i 10000)))
-                                                   (on-progress (* 100 (/ i total-entries))))
+                                                   (when (and on-progress (zero? (mod idx 10000)))
+                                                     (on-progress (* 100 (utils/inverse-lerp from-idx total-entries idx))))
 
-                                                 (if (or (expr-trace/expr-trace? tl-entry)
-                                                         (fn-return-trace/fn-return-trace? tl-entry))
+                                                   (if (or (expr-trace/expr-trace? tl-entry)
+                                                           (fn-return-trace/fn-return-trace? tl-entry))
 
-                                                   (let [result (index-protos/get-expr-val tl-entry)]
-                                                     (if (str/includes? (:val-str (rt-values/val-pprint result {:print-length print-length
-                                                                                                                :print-level print-level
-                                                                                                                :pprint? false}))
-                                                                        query-str)
+                                                     (let [result (index-protos/get-expr-val tl-entry)]
+                                                       (if (str/includes? (:val-str (rt-values/val-pprint result {:print-length print-length
+                                                                                                                  :print-level print-level
+                                                                                                                  :pprint? false}))
+                                                                          query-str)
 
-                                                       ;; if matches, finish the loop the found idx
-                                                       tl-entry
+                                                         ;; if matches, finish the loop the found idx
+                                                         tl-entry
 
-                                                       ;; else, keep looping
-                                                       (recur (inc i) tl-rest)))
+                                                         ;; else, keep looping
+                                                         (recur (inc idx))))
 
-                                                   ;; else
-                                                   (recur (inc i) tl-rest))))))
+                                                     ;; else
+                                                     (recur (inc idx))))))))
                              result (some-> found-entry
                                             index-protos/as-immutable
                                             reference-timeline-entry!)]                         
@@ -213,15 +214,15 @@
      (let [interrupted (atom false)
            interrupt-fn (fn [] (reset! interrupted true))
            {:keys [timeline-index]} (index-api/get-thread-indexes flow-id thread-id)           
-           tl-entries (index-protos/timeline-raw-entries timeline-index from-idx nil)
-           total-entries (count tl-entries)
-           search-next (fn search-next [i [tl-entry & tl-rest]]
-                         (if (and tl-entry
+           total-entries (count timeline-index)
+           search-next (fn search-next [idx]
+                         (if (and (< idx total-entries)
                                   (not @interrupted))                        
 
-                           (do
-                             (when (and on-progress (zero? (mod i 10000)))
-                               (on-progress (* 100 (/ i total-entries))))
+                           (let [tl-entry (get timeline-index idx)]
+                             
+                             (when (and on-progress (zero? (mod idx 10000)))
+                               (on-progress (* 100 (utils/inverse-lerp from-idx total-entries idx))))
 
                              (if (or (expr-trace/expr-trace? tl-entry)
                                      (fn-return-trace/fn-return-trace? tl-entry))
@@ -229,8 +230,8 @@
                                (let [result (index-protos/get-expr-val tl-entry)]
                                  
                                  (if (str/includes? (:val-str (rt-values/val-pprint result {:print-length print-length
-                                                                                                 :print-level print-level
-                                                                                                 :pprint? false}))
+                                                                                            :print-level print-level
+                                                                                            :pprint? false}))
                                                     query-str)
 
                                    ;; if matches, finish the loop with the found entry
@@ -239,15 +240,15 @@
                                                       reference-timeline-entry!))
 
                                    ;; else, keep looping
-                                   (js/setTimeout search-next 0 (inc i) tl-rest)))
+                                   (js/setTimeout search-next 0 (inc idx))))
 
                                ;; else
-                               (js/setTimeout search-next 0 (inc i) tl-rest)))
+                               (js/setTimeout search-next 0 (inc idx))))
 
                            ;; else didn't found it or was interrupted, in any case call on-result with nil
                            (on-result nil)
                            ))]
-       (search-next 0 tl-entries)
+       (search-next from-idx)
        interrupt-fn)))
 
 (defn async-search-next-timeline-entry [& args]
@@ -290,7 +291,7 @@
   ([] (jump-to-last-expression-in-this-thread nil))
   ([flow-id]
    (let [thread-id (utils/get-current-thread-id)
-         last-ex-loc (when-let [cnt (index-api/timeline-count flow-id thread-id)]
+         last-ex-loc (when-let [cnt (count (index-api/get-timeline flow-id thread-id))]
                        {:thread/id thread-id
                         :thread/name (utils/get-current-thread-name)
                         :thread/idx (dec cnt)})]

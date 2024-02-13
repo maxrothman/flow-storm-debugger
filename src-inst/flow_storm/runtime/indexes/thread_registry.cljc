@@ -23,11 +23,11 @@
   (tote-thread-tl-idx [_])
   (tote-entry [_]))
 
-(deftype TotalOrderTimelineEntry [flow-id thread-id thread-tl-idx entry]
+(deftype TotalOrderTimelineEntry [flow-id thread-id entry]
   TotalOrderTimelineEntryP
   (tote-flow-id [_] flow-id)
   (tote-thread-id [_] thread-id)
-  (tote-thread-tl-idx [_] thread-tl-idx)
+  (tote-thread-tl-idx [_] (index-protos/entry-idx entry))
   (tote-entry [_] entry))
 
 (defrecord ThreadRegistry [registry
@@ -118,14 +118,14 @@
 
   (stop-thread-registry [_])
 
-  (record-total-order-entry [_ flow-id thread-id thread-tl-idx entry]
+  (record-total-order-entry [_ flow-id thread-id entry]
     (locking total-order-timeline
       ;; `build-total-order-timeline` will print expr-vals which because of laziness can fire
       ;; instrumented code that will try to add to the timeline under the same thread, which will end
       ;; in a java.util.ConcurrentModificationException
       ;; The *printing-expr-val* flag is to prevent this
       (when-not *printing-expr-val*
-        (ml-add total-order-timeline (TotalOrderTimelineEntry. flow-id thread-id thread-tl-idx entry)))))
+        (ml-add total-order-timeline (TotalOrderTimelineEntry. flow-id thread-id entry)))))
 
   (build-total-order-timeline [_ forms-registry]
     (locking total-order-timeline
